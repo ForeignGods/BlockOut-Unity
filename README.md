@@ -15,3 +15,8 @@ Blocks
 Grid Wireframe Shader
 * animated line position
 * animated line color (gradient)
+
+Animated Objects From Blender
+* .mdd and .fbx allows to import animation
+* example wave modifier
+* link: https://www.youtube.com/watch?v=sdl-jpZ0NR0
