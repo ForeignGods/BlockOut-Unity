@@ -109,7 +109,7 @@ Shader "Unlit/Grid"
 					float waveColorAmp=1;
                     float waveColorOffset = sin(i.uv.y * waveColorFreq + _Time.y * waveColorAmp);
 
-					c = fixed4(color.x * waveColorOffset, color.y - waveColorOffset, color.z - waveColorOffset,brightness);
+					c = fixed4(color.x + waveColorOffset, color.y + waveColorOffset, color.z / waveColorOffset,brightness);
 					return c;
 				}
 				ENDCG

@@ -6,10 +6,12 @@ public class CollisionManager : MonoBehaviour
 {
 
     public List<GameObject> goList;
-    public Material landedMaterial;
+    Material[] newMaterials = new Material[2];
+
 
     void Start()
     {
+        
         foreach(GameObject goA in goList)
         {
             
@@ -21,19 +23,5 @@ public class CollisionManager : MonoBehaviour
 
             }
         }
-    }
-
-    // Performance problem
-    void FixedUpdate()
-    {
-        foreach(GameObject goA in goList)
-        {
-            
-            if(goA.GetComponent<XROffsetGrabInteractable>().stoppedMoving==true)
-            {
-                        this.GetComponent<MeshRenderer>().material = landedMaterial;
-            }
-
-        }  
     }
 }
