@@ -10,6 +10,14 @@ TagManager:
   - 0
   - 1
   - Outer
+  - Ray
+  - RowCollider
+  - Platform
+  - Spawner
+  - Dropzone
+  - BlockManager
+  - BlockSaver
+  - BlockPreviewer
   layers:
   - Default
   - TransparentFX

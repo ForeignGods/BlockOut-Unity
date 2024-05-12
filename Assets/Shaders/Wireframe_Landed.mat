@@ -28,6 +28,6 @@ Material:
     m_Floats:
     - _WireframeAliasing: 0.005
     m_Colors:
-    - _WireframeBackColour: {r: 1, g: 0, b: 0, a: 1}
-    - _WireframeFrontColour: {r: 1, g: 0, b: 0, a: 1}
+    - _WireframeBackColour: {r: 0, g: 0, b: 0, a: 1}
+    - _WireframeFrontColour: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

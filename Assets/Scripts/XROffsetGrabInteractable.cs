@@ -3,307 +3,366 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.XR.Interaction.Toolkit;
 using UnityEditor;
+using System.Linq;
 
 public class XROffsetGrabInteractable : XRGrabInteractable
 {
-    public GameObject cube;
-    private Rigidbody cubeRb;       
-    private float timeLeft = 0.125f;
-    private float stoppedMovingTimer = 0.5f;
     public Vector3 currentRotation;
     public Vector3 currentPosition;
-    public Material landedMaterial;
     public Vector3 targetPosition = new Vector3(0, 0, 0);
-    private bool selected = true;
     public bool landed = false;
     public bool firstContact = false;
     public bool stoppedMoving = false;
+    public bool shouldSpawnSoon = false;
+    public bool exited = false;
+    public bool canFall = false;
+    public bool enteredDropzone = false;
+
+    public Renderer wireframeRenderer;
+    public Material notLandedMaterial;
+    public Material almostLandedMaterial;
+    public Material landedMaterial;
+
     public List<GameObject> goList;
+    private List<Collider> rowColliders = new List<Collider>();
+    private List<GameObject> collidingObjects = new List<GameObject>();
+    public List<GameObject> droppedObjects = new List<GameObject>();
     private GameObject[] rays;
 
-    // [][][][] = 0
-    //
-    //
-    // []       = 1
-    //
-    //
-    // [][][]   = 2
-    //  []
-    //
-    // [][]     = 3
-    //   [][]
-    //
-    // [][][]   = 4
-    // []
-
-    // In mehere separate Skripts aufteilen
-    // Problem bei [][][][] Block wird nur beim  untersten sub block die rotatioj eingefroren.
-    
-    // Rigidbody 
-    // Mass = 10 
-    // Drag = 2.5 
-    // Angular Drag = 250
-
-    // XR Grab Interactable
-
-    // Movement type = Velocity Tracking 
-
-    // Smooth Position Amount = 10
-    // Tighten Position = 1 
-    // Velocity Damping = 1
-    // Velocity Scale = 1 
-
-    // Smooth Position Amount = 1
-    // Tighten Position = 1 
-    // Angular Velocity Damping = 1
-    // Angular Velocity Scale = 1 
-
-
-
+    private Collider spawnCollider;
+    public GameObject cube;
+    private Rigidbody cubeRb;
 
 
 
     void Start()
     {
+        // Notizen
+        // ----------------------
+        // Auf Platform Preview von naechstem Block der erscheinen wird 3D rotierend Wireframe wow speccial effects
+        // Auf PLatform Cage Save Block (links Next Block, rechts Save Block)
+
+        // entweder ui mit armband hologram style oder auch auf platform
+        // toggle gravitiy button in vr welt auf platform
+
+
+        // Endless Mode, Timed Mode, Zen Mode, 
+        // Haende mit Wireframe shader
+        // Player Position in Tube oder oberhalb?
+        
+        // Rigidbody auf PArent Block um fixedjoints zu ersetzten
+        // Wobbly Mode(Zero Gravity even after Dropzone, roundPos etc. after targetHit)
+
+        // Round Tube Background, plus rising reactive walls cool efect tube and walls(wall not a good work more like )
+
+        // Ausgangslage
+        // -----------------------
+        // enteredDropzone = false 
+        // constraints FreezePosition = false
+        // constraints FreezeRotation = false
+        // hitTarget = false
+        // isKinematic = false
+
+        // When entering Dropzone
+        // -----------------------
+        // enteredDropzone = true
+        // constraints FreezePosition = true (x,z)
+        // constraints FreezeRotation = true
+        // hitTarget = false
+        // isKinematic = false
+        
+        // When hit Target 
+        // -----------------------
+        // enteredDropzone = true
+        // constraints FreezePosition = true (x,z)
+        // constraints FreezeRotation = true
+        // hitTarget = true
+        // isKinematic = true
+
+        // When layer is full (collidingObjects.count == 36)
+        // enteredDropzone = true 
+        // constraints FreezePosition = false
+        // constraints FreezeRotation = true 
+        // hitTarget = false 
+        // isKinematic = false
+
+        cube.GetComponent<BoxCollider>().size = new Vector3(0.99f, 0.99f, 0.99f);
+        cube.GetComponent<BoxCollider>().contactOffset=0.00001f;
+
         cubeRb = cube.GetComponent<Rigidbody>();
+        //try only needed for debugging
+        try 
+        {
+            spawnCollider = GameObject.FindGameObjectWithTag("Spawner").GetComponent<Collider>();
+        }
+        catch
+        {
+
+        }
         rays = GameObject.FindGameObjectsWithTag("Ray");
 
-        //Physics.IgnoreCollision(childCollider.GetComponent<Collider>(), GetComponent<Collider>());
+        GameObject[] rowColliderObjs = GameObject.FindGameObjectsWithTag("RowCollider");
+        foreach (GameObject obj in rowColliderObjs)
+        {
+            Collider collider = obj.GetComponent<Collider>();
+            if (collider != null)
+            {
+                rowColliders.Add(collider);
+            }
+        }
 
-        if(!attachTransform)
+
+        if (!attachTransform)
         {
             GameObject attachPoint = new GameObject("Offset Grab Pivot");
             attachPoint.transform.SetParent(transform, false);
             attachTransform = attachPoint.transform;
         }
 
+        //BlockManager.InstantiateBlock();
     }
 
-
-    void Update()
+    public bool hitTarget=false;
+    public IEnumerator FallDown()
     {
-        if(selected == false)
-        {
-            timeLeft -= Time.deltaTime;
-        }
-        else if(timeLeft != 0.125f)
-        {
-            timeLeft = 0.125f;
-        }
-        if(timeLeft < 0f)
-        {
-          StartCoroutine(LerpRotation(this.transform.rotation, 0.25f)); 
-        }
 
+        SetEnteredDropZone(true);
+        RoundRotPosAll("Pos:XZ");
+        SetInteractionLayer("NotGrabable");
+        yield return new WaitUntil(() => hitTarget == true);
+        SetIsKinematic(true);
+        RoundRotPosAll("Pos:XYZ");
 
-        if(stoppedMoving == false && firstContact == true )
+        for (int i = 0; i < rowColliders.Count; ++i)
         {
-            
-            if(cubeRb.velocity.magnitude <  0.5f)
+            Collider[] colliders = Physics.OverlapBox(rowColliders[i].bounds.center,rowColliders[i].bounds.extents);
+            List<GameObject> collidingObjects = colliders
+                .Select(c => c.gameObject)
+                .Where(go => go != rowColliders[i].gameObject)
+                .ToList();
+
+            foreach (var obj in collidingObjects) 
             {
-                stoppedMovingTimer -= Time.deltaTime;
-                
-            }
-            else
-            {
-                stoppedMovingTimer = 0.5f;
-            }
-              
-        }
-        if(stoppedMovingTimer < 0f && landed != true)
-        {
-           stoppedMoving = true; 
+                Transform cubeLanded = obj.transform.Find("cube_landed");
+                Transform wireframeLanded = obj.transform.Find("wireframe_landed");
+                Transform wireframeNotLanded = obj.transform.Find("wireframe_not_landed");
+                XROffsetGrabInteractable script = obj.GetComponent<XROffsetGrabInteractable>();
 
-        }
+                if (cubeLanded != null && script.hitTarget) 
+                {
+                    Renderer renderer = cubeLanded.GetComponent<Renderer>();
+                    if (!renderer.enabled) 
+                    {
+                        renderer.enabled = true;
+                    }
+                    Material newMaterial = new Material(Shader.Find("Unlit/Color"));
+                    newMaterial.color = ColorManager.colors[i];
+                    renderer.material = newMaterial;
+                }
 
-
-    }
-
-    IEnumerator LerpRotation(Quaternion initialRotation, float duration)
-    {
-        float time = 0;
-         
-        Vector3 vec = initialRotation.eulerAngles;
-
-        vec.x = Mathf.Round(vec.x / 90) * 90;
-        vec.y = Mathf.Round(vec.y / 90) * 90;
-        vec.z = Mathf.Round(vec.z / 90) * 90;
-
-        Quaternion targetRotation = Quaternion.Euler(0, 0, 0);
-
-        targetRotation.eulerAngles = new Vector3(vec.x,vec.y,vec.z);
-
-        while (time < duration)
-        {
-            transform.rotation = Quaternion.Lerp(initialRotation, targetRotation, time / duration);
-            time += Time.deltaTime;
-            yield return null;
-        }
-        transform.rotation = targetRotation;
-        cubeRb.freezeRotation = true; 
-
-        for (int i = 0; i < goList.Count; ++i)
-        {
-            GameObject cube = goList[i];
-            if(cube.GetComponent<Rigidbody>().freezeRotation == false)
-            {
-                
-                Vector3 vecCube = cube.transform.rotation.eulerAngles;
-
-                vecCube.x = Mathf.Round(vec.x / 90) * 90;
-                vecCube.y = Mathf.Round(vec.y / 90) * 90;
-                vecCube.z = Mathf.Round(vec.z / 90) * 90;
-
-                Quaternion targetRotationCube = Quaternion.Euler(0, 0, 0);
-
-                targetRotationCube.eulerAngles = new Vector3(vecCube.x,vecCube.y,vecCube.z);
-
-                cube.transform.rotation = targetRotationCube;
-                cube.GetComponent<Rigidbody>().freezeRotation = true; 
+                if (wireframeLanded != null && !wireframeLanded.GetComponent<Renderer>().enabled) 
+                {
+                    wireframeLanded.GetComponent<Renderer>().enabled = true;
+                }
+                if (wireframeNotLanded != null && wireframeNotLanded.GetComponent<Renderer>().enabled) 
+                {
+                    wireframeNotLanded.GetComponent<Renderer>().enabled = false;
+                }
             }
 
-        }
-
-    }
-
-    void roundPosition(Vector3 initialPosition)
-    {
-        Vector3 vec = initialPosition;
-
-
-        vec.x = Mathf.Round(vec.x * 10.0f) * 0.1f;
-        vec.z = Mathf.Round(vec.z * 10.0f) * 0.1f;
-
-
-        cube.transform.position = new Vector3(vec.x, this.transform.position.y, vec.z);
-    }
-
-    IEnumerator DelayedPosition(Collision collision)
-    {
-        
-        firstContact = true;
-
-        roundPosition(cube.transform.position); 
-
-        for (int i = 0; i < goList.Count; ++i)
-        {
-            GameObject cube = goList[i];
-            Vector3 vec = cube.transform.position;
-
-
-            vec.x = Mathf.Round(vec.x * 10.0f) * 0.1f;
-            vec.z = Mathf.Round(vec.z * 10.0f) * 0.1f;
-
-
-            cube.transform.position = new Vector3(vec.x, cube.transform.position.y, vec.z);
-
-        } 
-
-        yield return new WaitUntil(() => stoppedMoving==true);
-        Debug.Log("stoppedMoving");
-        cubeRb.isKinematic = true;
-        roundPosition(cube.transform.position);  
-        
-        this.GetComponent<BoxCollider>().size = new Vector3(0.75f, 0.75f, 0.75f);
-        landed = true;
-        roundPosition(cube.transform.position); 
-        // roundPosition for every other cube in same block
-        // set material = landed, set all bools and change size of boxCollider
-        for (int i = 0; i < goList.Count; ++i)
-        {
-            GameObject cube = goList[i];
-            if(cube.GetComponent<XROffsetGrabInteractable>().landed == false)
+            if (collidingObjects.Count >= 36) 
             {
-                
-                cube.GetComponent<Rigidbody>().isKinematic = true;
-                //roundPosition(cube.transform.position); 
-                cube.GetComponent<BoxCollider>().size = new Vector3(0.75f, 0.75f, 0.75f);
-
-                cube.GetComponent<XROffsetGrabInteractable>().stoppedMoving = true;
-                cube.GetComponent<XROffsetGrabInteractable>().firstContact = true;
-                cube.GetComponent<XROffsetGrabInteractable>().landed = true;
+                BlockManager.isDeleting = false;
+                CoroutineManager.Instance.StartCoroutine(BlockManager.DeleteBlocks(collidingObjects));
             }
-
         }
 
     }
-
+    
     protected override void OnSelectEntered(SelectEnterEventArgs args)
     {
-        
+        //this.movementType = XRBaseInteractable.MovementType.VelocityTracking;
+        this.shouldSpawnSoon = false;
+        SetShouldSpawnSoonOfBrothers(false);
 
         if (rays.Length >= 2)
         {
-            rays[0].GetComponent<XRInteractorLineVisual>().enabled=false;
-            rays[1].GetComponent<XRInteractorLineVisual>().enabled=false;
+            rays[0].GetComponent<XRInteractorLineVisual>().enabled = false;
+            rays[1].GetComponent<XRInteractorLineVisual>().enabled = false;
         }
-        else
-        {
-            Debug.LogError("There are not enough GameObjects with the Ray tag to disable the line visuals.");
-        }
-
-
-        selected=true;
-
+        spawnCollider.enabled = false;
         attachTransform.rotation = args.interactorObject.transform.rotation;
-        cubeRb.freezeRotation = false;
         base.OnSelectEntered(args);
     }
 
-    public GameObject[] blocks;
-
     protected override void OnSelectExited(SelectExitEventArgs args)
     {
+        shouldSpawnSoon = true;
+        SetShouldSpawnSoonOfBrothers(false);
         if (rays.Length >= 2)
         {
-            rays[0].GetComponent<XRInteractorLineVisual>().enabled=true;
-            rays[1].GetComponent<XRInteractorLineVisual>().enabled=true;
+            rays[0].GetComponent<XRInteractorLineVisual>().enabled = true;
+            rays[1].GetComponent<XRInteractorLineVisual>().enabled = true;
         }
-        else
-        {
-            Debug.LogError("There are not enough GameObjects with the Ray tag to disable the line visuals.");
-        }
-        //rightRay.enabled=true;
-        Invoke("spawnBlock", 1f);
-        
-
-
-        selected=false;
-
     }
 
-    public void spawnBlock(){
-
-        Vector3 spawnPos = new Vector3(-0.6f,-0.4f,0.35f);
-
-        Vector3 spawnRot = new Vector3(0,0,0);
-        Quaternion spawnQuaternion = Quaternion.Euler(spawnRot);
-        int minValue = 0;
-        int maxValue = 2;
-        System.Random random = new System.Random();
-        //Random random = new Random();
-        int randomInt = random.Next(minValue, maxValue + 1);
-        
-        Debug.Log(spawnPos);
-
-        GameObject prefabInstance = Instantiate(blocks[randomInt],spawnPos,spawnQuaternion);
-        //PrefabUtility.UnpackPrefabInstance(prefabInstance, PrefabUnpackMode.Completely, InteractionMode.AutomatedAction);
-
+    private void OnTriggerEnter(Collider collision)
+    {
+        //Debug.Log(gameObject+" triggered "+collision.gameObject.tag);
+        if (collision.gameObject.tag == "Dropzone" && enteredDropzone == false)
+        {
+            Debug.Log("Collision with Dropzone");
+            StartCoroutine(FallDown());
+        }
     }
 
     void OnCollisionEnter(Collision collision)
     {
-        
-        Debug.Log(collision.gameObject.tag);
-
-        if (collision.gameObject.tag != "Wall" && landed != true)
+        //Debug.Log(gameObject+" collided "+collision.gameObject.tag);
+        if (collision.gameObject.tag=="BlockSaver")
         {
-            
-            StartCoroutine(DelayedPosition(collision));
 
         }
 
-
+        if ((collision.gameObject.tag == "Floor" || collision.gameObject.tag == "Block") && enteredDropzone == true)
+        {
+            SetHitTarget(true);
+            //if only needed for debugging
+            if(spawnCollider != null)
+            {
+                spawnCollider.enabled = true;
+            }
+            BlockManager.SpawnBlock(gameObject);
+        }
     }
- 
+
+    public float RoundToNearest(float value, float roundTo) 
+    {
+        return roundTo * Mathf.Round(value / roundTo);
+    }
+
+    public void RoundRotation() 
+    {
+        Vector3 eulerAngles = this.gameObject.transform.rotation.eulerAngles;
+        eulerAngles.x = RoundToNearest(eulerAngles.x, 90);
+        eulerAngles.y = RoundToNearest(eulerAngles.y, 90);
+        eulerAngles.z = RoundToNearest(eulerAngles.z, 90);
+        this.gameObject.transform.rotation = Quaternion.Euler(eulerAngles);
+        cubeRb.constraints = RigidbodyConstraints.FreezeRotation;
+    }
+
+    public void RoundPosition(string mode) 
+    {
+        Vector3 position = this.gameObject.transform.position;
+        position.x = Mathf.Round(position.x * 10.0f) * 0.1f;
+        if(mode == "Pos:XYZ")
+        {
+            position.y = Mathf.Round(position.y * 10.0f) * 0.1f;
+        }
+        position.z = Mathf.Round(position.z * 10.0f) * 0.1f;
+        this.gameObject.transform.position = position;
+        if(mode == "Pos:XZ")
+        {
+            cubeRb.constraints = RigidbodyConstraints.FreezePositionX|RigidbodyConstraints.FreezePositionZ;
+        }
+    }
+
+    public void RoundRotPosAll(string mode)
+    {
+        RoundRotation();
+        RoundPosition(mode);
+        for (int i = 0; i < goList.Count; ++i)
+        {
+            GameObject cubeBrother = goList[i];
+            if (cubeBrother != null)
+            {
+                XROffsetGrabInteractable offsetGrabInteractable = cubeBrother.GetComponent<XROffsetGrabInteractable>();
+                offsetGrabInteractable.RoundPosition(mode);
+                offsetGrabInteractable.RoundRotation();
+            }
+        }
+    }
+
+    public void SetShouldSpawnSoonOfBrothers(bool state)
+    {
+        for (int i = 0; i < goList.Count; ++i)
+        {
+            GameObject cubeBrother = goList[i];
+            if(cubeBrother != null )
+            {
+                XROffsetGrabInteractable offsetGrabInteractable = cubeBrother.GetComponent<XROffsetGrabInteractable>();
+                if(offsetGrabInteractable.shouldSpawnSoon != state)
+                {
+                    offsetGrabInteractable.shouldSpawnSoon = state;
+                }
+            }
+        }
+    }
+
+    public void SetEnteredDropZone(bool state)
+    {
+        enteredDropzone = state;
+        for (int i = 0; i < goList.Count; ++i)
+        {
+            GameObject cubeBrother = goList[i];
+            if (cubeBrother != null)
+            {
+                XROffsetGrabInteractable offsetGrabInteractable = cubeBrother.GetComponent<XROffsetGrabInteractable>();
+                if (offsetGrabInteractable.enteredDropzone != state)
+                {
+                    offsetGrabInteractable.enteredDropzone = state;
+                }
+            }
+        }
+    }
+
+    public void SetIsKinematic(bool state)
+    {
+        this.cubeRb.isKinematic = state;
+        for (int i = 0; i < goList.Count; ++i)
+        {
+            GameObject cubeBrother = goList[i];
+            if(cubeBrother != null)
+            {
+                XROffsetGrabInteractable offsetGrabInteractable = cubeBrother.GetComponent<XROffsetGrabInteractable>();
+                if(offsetGrabInteractable.cubeRb.isKinematic != state) 
+                {
+                    offsetGrabInteractable.cubeRb.isKinematic = state;
+                }
+            }
+        }
+    }
+
+    public void SetHitTarget(bool state)
+    {
+
+        this.hitTarget = state;
+        for (int i = 0; i < goList.Count; ++i)
+        {
+            GameObject cubeBrother = goList[i];
+            if (cubeBrother != null)
+            {
+                XROffsetGrabInteractable offsetGrabInteractable = cubeBrother.GetComponent<XROffsetGrabInteractable>();
+                if(offsetGrabInteractable.hitTarget != state) 
+                {
+                    offsetGrabInteractable.hitTarget = state;
+                }
+                
+            }
+        }
+    }
+
+    public void SetInteractionLayer(string layer)
+    {
+        this.interactionLayers = 1 << LayerMask.NameToLayer(layer);
+        for (int i = 0; i < goList.Count; ++i)
+        {
+            GameObject cubeBrother = goList[i];
+            if (cubeBrother != null)
+            {
+                XROffsetGrabInteractable offsetGrabInteractable = cubeBrother.GetComponent<XROffsetGrabInteractable>();
+                offsetGrabInteractable.interactionLayers = 1 << LayerMask.NameToLayer(layer); 
+            } 
+        }
+    }
 }
