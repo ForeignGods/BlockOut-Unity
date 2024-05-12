@@ -1,8 +1,10 @@
 # BlockOut-Unity
- 
 
+![yuyyuuy](https://github.com/ForeignGods/BlockOut-Unity/assets/78089013/3ba8a320-199d-4718-811f-c570477b143d)
 
 ## Notes
+
+This project is no longer actively maintained or worked on. It is preserved here for reference purposes only.
 
 How to know if one layer is filled with blocks?
 * Scan if 6x6=36 blocks have same y value.
